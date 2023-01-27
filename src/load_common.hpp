@@ -22,12 +22,17 @@
 
 #include <memory>
 #include "model/object_list.hpp"
+#include "transformer.hpp"
 #include "load_limiter.hpp"
 #include "utility/indented_logger.hpp"
 
 void load_related(const std::string &type,
                   const std::shared_ptr<object_list> &objects,
                   indented_logger& load_logger);
+/**
+ * Applies a transformer to all objects in a list.
+ */
+void transform_objects(std::shared_ptr<object_list> objects, std::shared_ptr<transformer> transform);
 
 /**
  * Filters out only the objects which the load limiter thinks should be included.
@@ -40,5 +45,10 @@ std::shared_ptr<object_list> filter_objects(std::shared_ptr<object_list> objects
                                             std::shared_ptr<load_limiter> limiter,
                                             indented_logger &load_logger,
                                             const std::string& type);
+
+void establish_relation(std::shared_ptr<base_object> main_object,
+                        std::shared_ptr<base_object> remote,
+                        const std::string& main_type,
+                        const std::string& remote_type);
 
 #endif // EGILSCIM_LOAD_COMMON_HPP

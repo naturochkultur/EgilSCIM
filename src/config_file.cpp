@@ -32,7 +32,7 @@
 #include "config_file_parser.hpp"
 #include "json_template_parser.hpp"
 #include "json_data_file.hpp"
-
+#include "transformer.hpp"
 #include "utility/utils.hpp"
 
 int config_file::load_templates() {
@@ -81,6 +81,11 @@ int config_file::load_template(const std::string &ss12000type, const std::string
                 add_variable(relation.type + "-scim-variables", relation.remote_attribute);
                 add_variable("all-scim-variables", relation.remote_attribute);
             }
+        }
+
+        auto transformed_attributes = get_transformed_attributes(ss12000type);
+        for (auto attr : transformed_attributes) {
+            var_set.insert(attr);   
         }
 
         std::string variables;
@@ -140,11 +145,7 @@ int config_file::load(const std::string &file_name) {
     }
 
     std::string val = get("scim-test-run", true);
-    if (!val.empty()) {
-        val = toUpper(val);
-        if (!val.empty() && val == "TRUE")
-            is_test_run = true;
-    }
+    is_test_run = is_true(val);
 
     return err;
 }

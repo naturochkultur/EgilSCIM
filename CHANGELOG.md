@@ -1,5 +1,22 @@
 ## Releases
 
+## v2.12.0 (2022-12-08)
+#### New features
+  - Functionality for transforming attributes from the data source (#165)
+
+## v2.11.1 (2022-10-05)
+#### Bugfixes
+  - Orphan filtering applies to all types (#158)
+
+## v2.11.0 (2022-06-02)
+#### New features
+  - Groups can now be generated from user attributes (#145)
+  - Relations can now be marked as required (#146)
+  - Optional referential integrity warnings in relations (#147)
+#### Bugfixes
+  - Better handling of when LDAP says an attribute both exists and has no values (#20)
+  - LDAP attribute names can now include the character '-' (#151)
+
 ## v2.10.0 (2022-03-25)
 #### New features
   - It's now possible to configure whether or not to follow LDAP referrals (#141)

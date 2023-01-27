@@ -360,6 +360,109 @@ the object method is used in `StudentGroup-remote-relations` to find the SchoolU
 for a given StudentGroup, SchoolUnit should come before StudentGroup in `scim-type-load-order`,
 so that the SchoolUnit objects are already loaded in memory when we load the StudentGroups.
 
+### Required relations
+Sometimes an object needs to have a relation to another object. For instance, a StudentGroup
+in SS12000 needs to have an owning SchoolUnit. If there are groups in the data source
+without a school unit attribute, or with a school unit attribute that points to a non-existing
+school unit, we can specify that these groups should be skipped in the load process by
+specifying that the relation is required:
+
+```
+  "require": "true",
+``` 
+
+By default, the object that fails to establish a relation will be silently skipped. If
+you don't expect this to happen you might prefer to get a warning. See the section below
+about referential integrity warnings.
+
+### Referential integrity warnings
+Sometimes when the value for the local attribute doesn't find a matching remote attribute
+we want to know about it. For instance, perhaps you expect all groups to have valid
+school unit codes. You can then specify that the relation should warn about attribute
+values that don't find a match:
+
+```
+  "warn_missing": "true",
+```
+
+After trying to establish relations for a data type, you will get a summary of all
+local attribute values for which there was no match (up to 100 values).
+
+## Generating groups from attributes
+
+Sometimes the student groups are not available as their own objects in the data source.
+Instead they're available as membership attributes for the users. For instance students
+might have a multi-valued attribute such as "groups" which lists all groups the user
+is a member of (one value per group).
+
+If these attributes contain enough information about the groups the client can generate
+"virtual" groups based on these attributes. For EGIL that typically means that the attribute
+values need to at least include the groups name and school unit (usually a school unit code).
+The values also need to be in a format that can be parsed with regular expressions.
+
+For instance, if users have group attributes with values such as "12345678#Math 1A", we
+can create a virtual group with display name "Math 1A" and school unit code "12345678".
+
+The virtual group will get a generated UUID based on the parts of the attribute values
+that uniquely identify the group.
+
+To use virtual groups, make sure the users from which the groups should be generated
+are loaded before the groups in the scim-type-load-order variable.
+
+Then make sure the group type is a generated type, for instance:
+
+```
+StudentGroup-is-generated = true
+```
+
+Then specify from which user types' attributes to generate the groups, for instance if
+both students and teachers have these membership attributes:
+
+```
+StudentGroup-generate-from-types = Teacher Student
+```
+
+Finally, specify how to generate groups from the attributes. Here's an example:
+
+```
+StudentGroup-generate-from-attributes = <?
+[
+  {
+    "from": "classes",
+    "match": "(.*)#(.*)",
+    "uuid": "$1$2",
+    "attributes": [ [ "studentGroupType", "Klass" ], [ "schoolUnitCode", "$1" ], [ "displayName", "$2" ] ]
+  },
+  {
+    "from": "educationGroups",
+    "match": "(.*)#(.*)",
+    "uuid": "$1$2",
+    "attributes": [ [ "studentGroupType", "Undervisning" ], [ "schoolUnitCode", "$1" ], [ "displayName", "$2" ] ]
+  }
+]
+?>
+```
+
+In this example we're generating groups from two attributes, `classes` and `educationGroups` (see the
+`from` attribute for each).
+
+For each attribute we specify a regular expression (`match`). Attribute
+values which do not match the regular expression are simply ignored. Note that capture groups are
+used in the regular expressions (the parentheses in the regular expressions). In this case the first
+capture group matches the school unit code, and the second matches the group's display name. We
+can now refer to these individual parts with `$1` (school unit code) and `$2` (group display name).
+
+Then we need to specify how to generate a unique id for the generated groups (`uuid`). In this
+case `$1` and `$2` will uniquely identify a group, so we use those two concatenated when we
+generated a UUID for the groups.
+
+Then we specify which attributes the virtual group should have. We use `$1` and `$2` to give the
+generated group a schoolUnitCode attribute and a displayName attribute. We also give the group
+a studentGroupType attribute, with hard coded values depending on which attribute was used
+from the user (so groups generated from a user's `classes` attribute will get `studentGroupType`
+set to "Klass", and groups generated from a user's `educationGroups` attribute will get
+`studentGroupType` set to "Undervisning").
+
 ## Limiting the load process
 
 Which objects to load from the source is typically specified with an LDAP filter
@@ -479,6 +582,124 @@ StudentGroup-orphan-if-missing = Student Teacher
 ```
 
 Only groups that are missing _both_ Student and Teacher relations will then be filtered out.
+
+## Transforming attributes
+
+Sometimes the attributes in the data source don't have the format we require. Some tranformations
+can be carried out in the JSON templates, for instance concatenating strings or with the switch
+construct. If the data source is an SQL database the SQL queries can also be used to
+transform data. A third method is to specify transform rules which are applied to the data after
+it has been read from the data source (but before relations have been established or load limiting
+had been done).
+
+Transform rules are specified by data type. Each data type can have multiple rules, they are
+carried out in order after an object of that type has been loaded from the data source.
+
+Transform rules are specified as a JSON array, for instance to specify rules for Student
+objects:
+
+```
+Student-transform-attributes = <?
+[
+  {
+    <<< RULE 1 >>>
+  },
+  {
+    <<< RULE 2 >>>
+  }
+]
+?>
+```
+
+Each rule will have a "from" field specifying which attribute to transform. You can also
+specify a "function" field to choose which type of transform to perform (if you don't
+specify a function the default is to perform a regular expression transform).
+
+### Regular expression transforms
+
+When transforming with regular expressions each rule can have one or many regular expression
+to match against. For each regular expression you can also specify how to transform the values
+and to which new attribute the transformed value should be written.
+
+If you specify several regular expressions, you can choose whether to apply all transforms or
+just the first one to match.
+
+You can also specify that the value should simply be copied to a new attribute if none of the
+expressions match.
+
+A simple example for removing a prefix from group names:
+
+```
+StudentGroup-transform-attributes = <?
+[
+  {
+    "from": "cn",
+    "transforms": [ ["XY-(.*)", "displayName", "$1"] ]
+  }
+]
+?>
+```
+
+Here we are transforming the `cn` attribute. For all values matching the regular expression
+`XY-(.*)` we will create a new value in the displayName attribute with just the text after
+"XY-". Note that regular expression capture groups are used and `$1` in this example refers
+to the first capture group (`(.*)`).
+
+If we want to do the same but simply copy values that don't start with "XY-" we can use
+the `noMatch` field:
+
+```
+StudentGroup-transform-attributes = <?
+[
+  {
+    "from": "cn",
+    "transforms": [ ["XY-(.*)", "displayName", "$1"] ],
+    "noMatch": "displayName"
+  }
+]
+?>
+```
+
+In other words, if none of the expressions under `transforms` match, just copy the value to
+`displayName`.
+
+Here's an example with two regular expressions, for splitting a value into two new attributes
+(for instance `fullName` into `firstName` and `lastName`):
+
+```
+Student-transform-attributes  = <?
+[
+  {
+    "from": "fullName",
+    "transforms": [ ["(.*?) .*", "firstName", "$1"],
+                    [".*? (.*)", "lastName", "$1"] ]
+  }
+]
+?>
+```
+
+You can also set `allMatch` to false if you only want to apply the first matching regular
+expression. Here's an example which classifies a group into different types depending on
+an expected naming conventions:
+
+```
+Student-transform-attributes  = <?
+[
+  {
+    "from": "groups",
+    "transforms": [ ["[0-9][a-z]-(.*)", "class", "$1"],
+                    ["..-(.*)", "studyGroup", "$1"],
+		    ["(.*?)-(.*)", "otherGroup", "$0"] ],
+    "allMatch": false
+  }
+]
+?>
+```
+
+In this example we need to specify `allMatch` so that for instance classes are _only_
+classified as classes even though they also match the more general rules for study groups
+and other groups. The expressions are tried in order and only the first match will be
+applied.
 
 ## Execution
 

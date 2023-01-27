@@ -45,7 +45,15 @@ bool data_server::load(std::shared_ptr<sql::plugin> sql_plugin) {
         for (const auto &type : types) {
             std::shared_ptr<object_list> l;
             if (config.get_bool(type + "-is-generated")) {
-                if (!filtered_orphans) {
+                /* TODO
+                 * At the moment we make sure to filter orphans before Activity and Employment,
+                 * assuming those are at the end of the load order (so as to not generate
+                 * activities and employments for objects which are orphans).
+                 * Ideally we should probably instead do the filtering after everything is
+                 * loaded. To get this to work properly we might need a multi-pass filtering,
+                 * and perhaps proper relations.
+                 */
+                if (!filtered_orphans && (type == "Activity" || type == "Employment")) {
                     filter_orphans();
                     filtered_orphans = true;
                 }
@@ -108,10 +116,11 @@ void data_server::filter_orphans() {
     config_file &config = config_file::instance();
     string_vector types = config.get_vector("scim-type-load-order");
 
-    for (const auto &type : types) {
+    for (const auto &data_for_type : data) {
+        auto type = data_for_type.first;
+        auto object_list = data_for_type.second;
         auto attributes = config.get_vector(type + "-orphan-if-missing", true);
         if (!attributes.empty()) {
-            auto object_list = get_by_type(type);
             std::vector<std::string> to_remove;
             for (const auto &iter : *object_list) {
                 if (is_orphan(iter.second, attributes)) {
